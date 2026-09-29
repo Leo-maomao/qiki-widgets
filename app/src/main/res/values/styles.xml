@@ -1,0 +1,3 @@
+<resources>
+    <style name="Theme.QikiWidgets" parent="android:style/Theme.Material.Light.NoActionBar" />
+</resources>

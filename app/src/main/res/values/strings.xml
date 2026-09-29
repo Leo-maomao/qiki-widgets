@@ -1,0 +1,10 @@
+<resources>
+    <string name="app_name">Qiki Widgets</string>
+    <string name="sample_widget_name">AirPods 电量</string>
+    <string name="sample_widget_title">AirPods 电量</string>
+    <string name="sample_widget_status">正在等待 AirPods 广播</string>
+    <string name="sample_widget_open_app">打开组件中心</string>
+    <string name="airpods_scanner_title">AirPods 电量服务</string>
+    <string name="airpods_scanner_text">正在监听附近的 AirPods 广播</string>
+    <string name="airpods_scanner_channel">AirPods 服务</string>
+</resources>
