@@ -18,6 +18,12 @@ object AirPodsBatteryReader {
                     it.uuids?.any { uuid -> uuid.uuid.toString().equals("74ec2172-0bad-4d01-8f77-997b2be0722a", true) } == true
             }.getOrDefault(false)
         } ?: return false
+        val store = AirPodsBatteryStore(context)
+        val current = store.read()
+        val deviceName = runCatching { device.name ?: device.alias }.getOrNull()
+        if (deviceName != null && deviceName != current.deviceName) {
+            store.write(current.copy(deviceName = deviceName))
+        }
         val result = runCatching {
             context.contentResolver.call(provider, "getAirpodsState", device.address, null)
         }.onFailure { Log.w("AirPodsBatteryReader", "provider call failed", it) }.getOrNull() ?: return false
@@ -26,10 +32,8 @@ object AirPodsBatteryReader {
         val right = result.getInt("rightBattery", -1).takeIf { it in 0..100 }
         val box = result.getInt("boxBattery", -1).takeIf { it in 0..100 }
         if (left == null && right == null && box == null) return false
-        val store = AirPodsBatteryStore(context)
-        val current = store.read()
         store.write(current.copy(
-            deviceName = runCatching { device.name ?: device.alias }.getOrNull() ?: current.deviceName,
+            deviceName = deviceName ?: current.deviceName,
             left = left ?: current.left,
             right = right ?: current.right,
             case = box ?: current.case,
