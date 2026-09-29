@@ -14,6 +14,7 @@ import android.content.Context
 import android.content.BroadcastReceiver
 import android.content.Intent
 import android.content.IntentFilter
+import android.net.Uri
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
@@ -135,6 +136,7 @@ class AirPodsScannerService : Service() {
     }
 
     private fun readMetadataBattery(device: BluetoothDevice) {
+        readXiaomiBattery(device)
         val getMetadata = runCatching {
             device.javaClass.getMethod("getMetadata", Int::class.javaPrimitiveType)
         }.getOrNull() ?: return
@@ -167,6 +169,33 @@ class AirPodsScannerService : Service() {
             store.write(latest)
             SampleWidgetProvider.refreshAll(this)
         }
+    }
+
+    private fun readXiaomiBattery(device: BluetoothDevice) {
+        val result = runCatching {
+            contentResolver.call(
+                XIAOMI_HEADSET_PROVIDER,
+                "getAirpodsState",
+                device.address,
+                null,
+            )
+        }.onFailure { Log.w(TAG, "Xiaomi AirPods provider unavailable", it) }.getOrNull() ?: return
+        Log.d(TAG, "Xiaomi AirPods provider result keys=${result.keySet()}")
+        val left = result.getInt("leftBattery", -1).takeIf { it in 0..100 }
+        val right = result.getInt("rightBattery", -1).takeIf { it in 0..100 }
+        val case = result.getInt("boxBattery", -1).takeIf { it in 0..100 }
+        if (left == null && right == null && case == null) return
+        val current = store.read()
+        val next = current.copy(
+            left = left ?: current.left,
+            right = right ?: current.right,
+            case = case ?: current.case,
+            budsInUse = result.getInt("wearType", 0) == 2,
+            lastSeenMillis = System.currentTimeMillis(),
+        )
+        Log.d(TAG, "Xiaomi AirPods state ${next.left}/${next.right}/${next.case}")
+        store.write(next)
+        SampleWidgetProvider.refreshAll(this)
     }
 
     private fun readPublicBatteryLevel(device: BluetoothDevice): Int? = runCatching {
@@ -316,6 +345,9 @@ class AirPodsScannerService : Service() {
         private const val METADATA_RIGHT_BATTERY = 11
         private const val METADATA_CASE_BATTERY = 12
         private const val AAP_SERVICE_UUID = "74ec2172-0bad-4d01-8f77-997b2be0722a"
+        private val XIAOMI_HEADSET_PROVIDER = Uri.parse(
+            "content://com.android.bluetooth.ble.app.headsetdata.provider",
+        )
         private const val AIRPODS_PAYLOAD_SIZE = 27
         private const val FLAG_PRIMARY_IS_LEFT = 0x20
         private const val FLAG_PRIMARY_IN_EAR = 0x02
