@@ -32,3 +32,9 @@
 - 增加“诊断页”，显示当前数据源、权限拒绝原因、目标蓝牙地址和最后成功时间。
 - 允许用户从已配对的 AirPods 列表中锁定目标设备，避免多个 AirPods 同时配对时选错。
 - 对不同 HyperOS 版本做适配表；不通过反射或私有接口伪造 1% 数据。
+
+## 最有希望的个人增强路线：Shizuku
+
+目前无线 ADB 的 shell 身份可以直接调用同一个 Xiaomi Provider，并拿到 1% 数据；普通 APK 的问题是调用者身份不够。可以增加一个可选的 Shizuku companion：用户只需在手机上启动一次 Shizuku（无线调试即可，不需要 root），Qiki 通过 Shizuku UserService 以 shell 身份执行 Provider 调用，再把结果回传给 Widget。主应用仍然保留普通权限路径，Shizuku 不可用时自动回退到缓存/`--`。
+
+这个路线的限制是需要用户安装并授权 Shizuku，且 HyperOS 可能在系统升级后收紧 shell 对 Provider 的访问；因此它应作为可选增强，不能写死成唯一依赖。
