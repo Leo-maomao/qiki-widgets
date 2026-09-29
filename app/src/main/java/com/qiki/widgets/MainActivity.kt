@@ -20,6 +20,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.qiki.widgets.airpods.AirPodsScannerService
+import com.qiki.widgets.airpods.AirPodsBatteryReader
 import com.qiki.widgets.widget.SampleWidgetProvider
 
 class MainActivity : ComponentActivity() {
@@ -39,6 +40,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        AirPodsBatteryReader.read(this)
         SampleWidgetProvider.refreshAll(this)
         if (hasBluetoothPermissions()) {
             runCatching { AirPodsScannerService.start(this) }

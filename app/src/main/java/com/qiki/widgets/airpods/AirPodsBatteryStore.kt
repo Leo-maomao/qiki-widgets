@@ -3,6 +3,7 @@ package com.qiki.widgets.airpods
 import android.content.Context
 
 data class AirPodsBattery(
+    val deviceName: String? = null,
     val left: Int? = null,
     val right: Int? = null,
     val case: Int? = null,
@@ -19,6 +20,7 @@ class AirPodsBatteryStore(context: Context) {
     fun read(): AirPodsBattery = if (preferences.getInt(KEY_DATA_VERSION, 0) < DATA_VERSION) {
         AirPodsBattery()
     } else AirPodsBattery(
+        deviceName = preferences.getString(KEY_DEVICE_NAME, null),
         left = preferences.getNullableInt(KEY_LEFT),
         right = preferences.getNullableInt(KEY_RIGHT),
         case = preferences.getNullableInt(KEY_CASE),
@@ -29,6 +31,7 @@ class AirPodsBatteryStore(context: Context) {
     fun write(value: AirPodsBattery) {
         preferences.edit()
             .putInt(KEY_DATA_VERSION, DATA_VERSION)
+            .putNullableString(KEY_DEVICE_NAME, value.deviceName)
             .putNullableInt(KEY_LEFT, value.left)
             .putNullableInt(KEY_RIGHT, value.right)
             .putNullableInt(KEY_CASE, value.case)
@@ -43,9 +46,13 @@ class AirPodsBatteryStore(context: Context) {
     private fun android.content.SharedPreferences.Editor.putNullableInt(key: String, value: Int?): android.content.SharedPreferences.Editor =
         if (value == null) remove(key) else putInt(key, value)
 
+    private fun android.content.SharedPreferences.Editor.putNullableString(key: String, value: String?): android.content.SharedPreferences.Editor =
+        if (value == null) remove(key) else putString(key, value)
+
     private companion object {
         const val FILE_NAME = "airpods_battery"
         const val KEY_LEFT = "left"
+        const val KEY_DEVICE_NAME = "device_name"
         const val KEY_RIGHT = "right"
         const val KEY_CASE = "case"
         const val KEY_BUDS_IN_USE = "buds_in_use"

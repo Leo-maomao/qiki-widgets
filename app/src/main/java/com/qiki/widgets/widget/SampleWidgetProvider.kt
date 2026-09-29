@@ -77,16 +77,15 @@ private fun updateWidget(
     )
     appWidgetIds.forEach { appWidgetId ->
         val views = RemoteViews(context.packageName, R.layout.widget_sample).apply {
+            setTextViewText(R.id.widget_case, percentText(battery.case))
             setTextViewText(R.id.widget_left, percentText(battery.left))
             setTextViewText(R.id.widget_right, percentText(battery.right))
-            setTextViewText(R.id.widget_case, percentText(battery.case))
-            setTextViewText(R.id.widget_updated_at, updatedText(battery))
+            setTextViewText(R.id.widget_title, battery.deviceName ?: "AirPods")
             setOnClickPendingIntent(R.id.widget_refresh, refreshPendingIntent)
             setOnClickPendingIntent(R.id.widget_title, openAppPendingIntent)
             setOnClickPendingIntent(R.id.widget_left, openAppPendingIntent)
             setOnClickPendingIntent(R.id.widget_right, openAppPendingIntent)
             setOnClickPendingIntent(R.id.widget_case, openAppPendingIntent)
-            setOnClickPendingIntent(R.id.widget_updated_at, openAppPendingIntent)
         }
         manager.updateAppWidget(appWidgetId, views)
     }
