@@ -91,7 +91,7 @@ private fun updateWidget(
 }
 
 private fun statusText(battery: com.qiki.widgets.airpods.AirPodsBattery): String =
-    if (!battery.isAvailable) "未发现 AirPods，请保持耳机盒打开" else if (!battery.budsInUse) {
+    if (!battery.isAvailable) "等待已配对 AirPods 连接或系统电量通知" else if (!battery.budsInUse) {
         "盒 ${battery.case?.let { "$it%" } ?: "--"}  · 佩戴耳机后显示左右耳"
     } else
         "左 ${battery.left?.let { "$it%" } ?: "--"}  右 ${battery.right?.let { "$it%" } ?: "--"}  盒 ${battery.case?.let { "$it%" } ?: "--"}"

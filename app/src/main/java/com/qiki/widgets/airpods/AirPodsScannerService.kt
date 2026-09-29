@@ -5,18 +5,25 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
 import android.appwidget.AppWidgetManager
+import android.bluetooth.BluetoothA2dp
+import android.bluetooth.BluetoothDevice
+import android.bluetooth.BluetoothHeadset
 import android.bluetooth.BluetoothManager
+import android.bluetooth.BluetoothProfile
 import android.bluetooth.le.BluetoothLeScanner
 import android.bluetooth.le.ScanCallback
 import android.bluetooth.le.ScanResult
 import android.bluetooth.le.ScanSettings
 import android.content.Context
+import android.content.BroadcastReceiver
 import android.content.Intent
+import android.content.IntentFilter
 import android.os.Build
 import android.os.IBinder
 import android.os.SystemClock
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import com.qiki.widgets.R
 import com.qiki.widgets.widget.SampleWidgetProvider
 
@@ -30,6 +37,9 @@ class AirPodsScannerService : Service() {
     private val recentBeacons = ArrayList<ScanResult>()
     private var pendingBattery: AirPodsBattery? = null
     private var pendingHits = 0
+    private var a2dp: BluetoothA2dp? = null
+    private var headset: BluetoothHeadset? = null
+    @Volatile private var pairedAirPodsConnected = false
 
     override fun onCreate() {
         super.onCreate()
@@ -37,12 +47,17 @@ class AirPodsScannerService : Service() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             startForeground(NOTIFICATION_ID, notification())
         }
+        registerConnectionTracking()
         startScan()
     }
 
     override fun onDestroy() {
         scanner?.stopScan(scanCallback)
         scanner = null
+        runCatching { unregisterReceiver(connectionReceiver) }
+        val adapter = (getSystemService(BLUETOOTH_SERVICE) as BluetoothManager).adapter
+        a2dp?.let { adapter.closeProfileProxy(BluetoothProfile.A2DP, it) }
+        headset?.let { adapter.closeProfileProxy(BluetoothProfile.HEADSET, it) }
         super.onDestroy()
     }
 
@@ -77,12 +92,132 @@ class AirPodsScannerService : Service() {
         )
     }
 
+    private fun registerConnectionTracking() {
+        val adapter = (getSystemService(BLUETOOTH_SERVICE) as BluetoothManager).adapter
+        ContextCompat.registerReceiver(
+            this,
+            connectionReceiver,
+            IntentFilter().apply {
+                addAction(BluetoothA2dp.ACTION_CONNECTION_STATE_CHANGED)
+                addAction(BluetoothHeadset.ACTION_CONNECTION_STATE_CHANGED)
+                addAction(ACTION_BLUETOOTH_BATTERY_CHANGED)
+            },
+            // Bluetooth broadcasts are emitted by the system Bluetooth process.
+            ContextCompat.RECEIVER_EXPORTED,
+        )
+        adapter.getProfileProxy(this, profileListener, BluetoothProfile.A2DP)
+        adapter.getProfileProxy(this, profileListener, BluetoothProfile.HEADSET)
+        refreshConnectionState()
+    }
+
+    private fun refreshConnectionState() {
+        val bondedDevices = bondedAirPodsDevices()
+        val bonded = bondedDevices.map { it.address }.toSet()
+        pairedAirPodsConnected = listOfNotNull(
+            a2dp?.connectedDevices,
+            headset?.connectedDevices,
+        ).flatten().any { it.address in bonded }
+        Log.d(TAG, "paired AirPods audio connected=$pairedAirPodsConnected")
+        bondedDevices.forEach(::readMetadataBattery)
+    }
+
+    private fun bondedAirPodsAddresses(): Set<String> {
+        return bondedAirPodsDevices().map { it.address }.toSet()
+    }
+
+    private fun bondedAirPodsDevices(): List<BluetoothDevice> {
+        val adapter = (getSystemService(BLUETOOTH_SERVICE) as BluetoothManager).adapter
+        return adapter.bondedDevices
+            .filter { device ->
+                val name = runCatching { device.name ?: device.alias ?: "" }.getOrDefault("")
+                name.contains("airpods", ignoreCase = true) ||
+                    device.uuids?.any {
+                        it.uuid.toString().equals(AAP_SERVICE_UUID, ignoreCase = true)
+                    } == true
+            }
+    }
+
+    private fun readMetadataBattery(device: BluetoothDevice) {
+        val getMetadata = runCatching {
+            device.javaClass.getMethod("getMetadata", Int::class.javaPrimitiveType)
+        }.getOrNull() ?: return
+        fun level(key: Int): Int? = runCatching {
+            val value = getMetadata.invoke(device, key) as? ByteArray ?: return@runCatching null
+            val text = value.toString(Charsets.UTF_8).trim()
+            val parsed = text.toIntOrNull() ?: value.singleOrNull()?.toInt()?.and(0xFF)
+            parsed?.takeIf { it in 0..100 }
+        }.getOrNull()
+        val current = store.read()
+        val left = level(METADATA_LEFT_BATTERY)
+        val right = level(METADATA_RIGHT_BATTERY)
+        val case = level(METADATA_CASE_BATTERY)
+        val next = current.copy(
+            left = left ?: current.left,
+            right = right ?: current.right,
+            case = case ?: current.case,
+            lastSeenMillis = if (left != null || right != null || case != null) {
+                System.currentTimeMillis()
+            } else current.lastSeenMillis,
+        )
+        if (next != current) {
+            Log.d(TAG, "system metadata battery address=${device.address} ${next.left}/${next.right}/${next.case}")
+            store.write(next)
+            SampleWidgetProvider.refreshAll(this)
+        }
+    }
+
+    private val profileListener = object : BluetoothProfile.ServiceListener {
+        override fun onServiceConnected(profile: Int, proxy: BluetoothProfile) {
+            when (profile) {
+                BluetoothProfile.A2DP -> a2dp = proxy as BluetoothA2dp
+                BluetoothProfile.HEADSET -> headset = proxy as BluetoothHeadset
+            }
+            refreshConnectionState()
+        }
+
+        override fun onServiceDisconnected(profile: Int) {
+            when (profile) {
+                BluetoothProfile.A2DP -> a2dp = null
+                BluetoothProfile.HEADSET -> headset = null
+            }
+            refreshConnectionState()
+        }
+    }
+
+    private val connectionReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            if (intent.action == ACTION_BLUETOOTH_BATTERY_CHANGED) {
+                handleSystemBattery(intent)
+            } else {
+                refreshConnectionState()
+            }
+        }
+    }
+
+    private fun handleSystemBattery(intent: Intent) {
+        val device = intent.getParcelableExtra<BluetoothDevice>(BluetoothDevice.EXTRA_DEVICE)
+            ?: return
+        if (device.address !in bondedAirPodsAddresses()) return
+        val level = intent.getIntExtra(EXTRA_BLUETOOTH_BATTERY_LEVEL, -1)
+        if (level !in 0..100) return
+        Log.d(TAG, "system Bluetooth battery address=${device.address} level=$level")
+        val current = store.read()
+        store.write(
+            current.copy(
+                case = level,
+                lastSeenMillis = System.currentTimeMillis(),
+            ),
+        )
+        SampleWidgetProvider.refreshAll(this@AirPodsScannerService)
+    }
+
     private val scanCallback = object : ScanCallback() {
         override fun onScanFailed(errorCode: Int) {
             Log.e(TAG, "BLE scan failed error=$errorCode")
         }
 
         override fun onScanResult(callbackType: Int, result: ScanResult) {
+            if (!pairedAirPodsConnected) return
             val rawManufacturerData = result.scanRecord
                 ?.getManufacturerSpecificData(APPLE_COMPANY_ID)
                 ?: return
@@ -205,6 +340,14 @@ class AirPodsScannerService : Service() {
 
     companion object {
         private const val APPLE_COMPANY_ID = 0x004C
+        private const val ACTION_BLUETOOTH_BATTERY_CHANGED =
+            "android.bluetooth.device.action.BATTERY_LEVEL_CHANGED"
+        private const val EXTRA_BLUETOOTH_BATTERY_LEVEL =
+            "android.bluetooth.device.extra.BATTERY_LEVEL"
+        private const val METADATA_LEFT_BATTERY = 10
+        private const val METADATA_RIGHT_BATTERY = 11
+        private const val METADATA_CASE_BATTERY = 12
+        private const val AAP_SERVICE_UUID = "74ec2172-0bad-4d01-8f77-997b2be0722a"
         private const val AIRPODS_PAYLOAD_SIZE = 27
         private const val FLAG_PRIMARY_IS_LEFT = 0x20
         private const val FLAG_PRIMARY_IN_EAR = 0x02
