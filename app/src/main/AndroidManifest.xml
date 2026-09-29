@@ -38,6 +38,9 @@
                 <action android:name="android.bluetooth.device.action.BATTERY_LEVEL_CHANGED" />
             </intent-filter>
         </receiver>
+        <receiver
+            android:name=".widget.WidgetRefreshReceiver"
+            android:exported="false" />
         <service
             android:name=".airpods.AirPodsScannerService"
             android:exported="false" />
