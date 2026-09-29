@@ -10,6 +10,7 @@ import android.widget.RemoteViews
 import com.qiki.widgets.MainActivity
 import com.qiki.widgets.R
 import com.qiki.widgets.airpods.AirPodsBatteryStore
+import com.qiki.widgets.airpods.AirPodsScannerService
 import java.text.DateFormat
 import java.util.Date
 
@@ -28,7 +29,10 @@ class SampleWidgetProvider : AppWidgetProvider() {
 
     override fun onReceive(context: Context, intent: Intent) {
         super.onReceive(context, intent)
-        if (intent.action == ACTION_REFRESH) refreshAll(context)
+        if (intent.action == ACTION_REFRESH) {
+            AirPodsScannerService.refresh(context)
+            refreshAll(context)
+        }
     }
 
     override fun onEnabled(context: Context) {
@@ -67,11 +71,17 @@ private fun updateWidget(
         Intent(context, MainActivity::class.java),
         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
     )
-    val updatedAt = DateFormat.getTimeInstance(DateFormat.SHORT).format(Date())
+    val refreshPendingIntent = PendingIntent.getBroadcast(
+        context,
+        1,
+        Intent(context, SampleWidgetProvider::class.java).setAction(SampleWidgetProvider.ACTION_REFRESH),
+        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+    )
     appWidgetIds.forEach { appWidgetId ->
         val views = RemoteViews(context.packageName, R.layout.widget_sample).apply {
             setTextViewText(R.id.widget_status, statusText(battery))
-            setTextViewText(R.id.widget_updated_at, updatedText(battery, updatedAt))
+            setTextViewText(R.id.widget_updated_at, updatedText(battery))
+            setOnClickPendingIntent(R.id.widget_refresh, refreshPendingIntent)
             setOnClickPendingIntent(R.id.widget_title, openAppPendingIntent)
             setOnClickPendingIntent(R.id.widget_status, openAppPendingIntent)
             setOnClickPendingIntent(R.id.widget_updated_at, openAppPendingIntent)
@@ -81,10 +91,16 @@ private fun updateWidget(
 }
 
 private fun statusText(battery: com.qiki.widgets.airpods.AirPodsBattery): String =
-    if (!battery.isAvailable) "未发现 AirPods，请保持耳机盒打开" else
+    if (!battery.isAvailable) "未发现 AirPods，请保持耳机盒打开" else if (!battery.budsInUse) {
+        "盒 ${battery.case?.let { "$it%" } ?: "--"}  · 佩戴耳机后显示左右耳"
+    } else
         "左 ${battery.left?.let { "$it%" } ?: "--"}  右 ${battery.right?.let { "$it%" } ?: "--"}  盒 ${battery.case?.let { "$it%" } ?: "--"}"
 
 private fun updatedText(
     battery: com.qiki.widgets.airpods.AirPodsBattery,
-    fallback: String,
-): String = if (battery.lastSeenMillis == 0L) "等待蓝牙广播" else "更新于 $fallback"
+): String = if (battery.lastSeenMillis == 0L) {
+    "等待 AirPods 广播"
+} else {
+    val updatedAt = DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(battery.lastSeenMillis))
+    "数据时间 $updatedAt"
+}

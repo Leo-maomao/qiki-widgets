@@ -15,6 +15,15 @@
         android:textSize="16sp"
         android:textStyle="bold" />
 
+    <ImageButton
+        android:id="@+id/widget_refresh"
+        android:layout_width="32dp"
+        android:layout_height="32dp"
+        android:layout_gravity="end"
+        android:background="@android:color/transparent"
+        android:contentDescription="刷新 AirPods 电量"
+        android:src="@android:drawable/ic_popup_sync" />
+
     <TextView
         android:id="@+id/widget_status"
         android:layout_width="match_parent"
