@@ -79,27 +79,27 @@ private fun updateWidget(
     )
     appWidgetIds.forEach { appWidgetId ->
         val views = RemoteViews(context.packageName, R.layout.widget_sample).apply {
-            setTextViewText(R.id.widget_status, statusText(battery))
+            setTextViewText(R.id.widget_left, percentText(battery.left))
+            setTextViewText(R.id.widget_right, percentText(battery.right))
+            setTextViewText(R.id.widget_case, percentText(battery.case))
             setTextViewText(R.id.widget_updated_at, updatedText(battery))
             setOnClickPendingIntent(R.id.widget_refresh, refreshPendingIntent)
             setOnClickPendingIntent(R.id.widget_title, openAppPendingIntent)
-            setOnClickPendingIntent(R.id.widget_status, openAppPendingIntent)
+            setOnClickPendingIntent(R.id.widget_left, openAppPendingIntent)
+            setOnClickPendingIntent(R.id.widget_right, openAppPendingIntent)
+            setOnClickPendingIntent(R.id.widget_case, openAppPendingIntent)
             setOnClickPendingIntent(R.id.widget_updated_at, openAppPendingIntent)
         }
         manager.updateAppWidget(appWidgetId, views)
     }
 }
 
-private fun statusText(battery: com.qiki.widgets.airpods.AirPodsBattery): String =
-    if (!battery.isAvailable) "等待已配对 AirPods 连接或系统电量通知" else if (!battery.budsInUse) {
-        "盒 ${battery.case?.let { "$it%" } ?: "--"}  · 佩戴耳机后显示左右耳"
-    } else
-        "左 ${battery.left?.let { "$it%" } ?: "--"}  右 ${battery.right?.let { "$it%" } ?: "--"}  盒 ${battery.case?.let { "$it%" } ?: "--"}"
+private fun percentText(value: Int?): String = value?.let { "$it%" } ?: "--"
 
 private fun updatedText(
     battery: com.qiki.widgets.airpods.AirPodsBattery,
 ): String = if (battery.lastSeenMillis == 0L) {
-    "等待 AirPods 广播"
+    "等待已配对 AirPods 连接"
 } else {
     val updatedAt = DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(battery.lastSeenMillis))
     "数据时间 $updatedAt"

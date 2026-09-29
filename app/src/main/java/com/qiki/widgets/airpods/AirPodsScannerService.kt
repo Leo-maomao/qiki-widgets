@@ -1,10 +1,6 @@
 package com.qiki.widgets.airpods
 
-import android.app.Notification
-import android.app.NotificationChannel
-import android.app.NotificationManager
 import android.app.Service
-import android.appwidget.AppWidgetManager
 import android.bluetooth.BluetoothA2dp
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothHeadset
@@ -19,12 +15,12 @@ import android.content.BroadcastReceiver
 import android.content.Intent
 import android.content.IntentFilter
 import android.os.Build
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.os.SystemClock
 import android.util.Log
-import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
-import com.qiki.widgets.R
 import com.qiki.widgets.widget.SampleWidgetProvider
 
 /**
@@ -40,15 +36,13 @@ class AirPodsScannerService : Service() {
     private var a2dp: BluetoothA2dp? = null
     private var headset: BluetoothHeadset? = null
     @Volatile private var pairedAirPodsConnected = false
+    private val mainHandler = Handler(Looper.getMainLooper())
 
     override fun onCreate() {
         super.onCreate()
-        createNotificationChannel()
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            startForeground(NOTIFICATION_ID, notification())
-        }
         registerConnectionTracking()
         startScan()
+        mainHandler.postDelayed({ stopSelf() }, SCAN_WINDOW_MILLIS)
     }
 
     override fun onDestroy() {
@@ -58,6 +52,7 @@ class AirPodsScannerService : Service() {
         val adapter = (getSystemService(BLUETOOTH_SERVICE) as BluetoothManager).adapter
         a2dp?.let { adapter.closeProfileProxy(BluetoothProfile.A2DP, it) }
         headset?.let { adapter.closeProfileProxy(BluetoothProfile.HEADSET, it) }
+        mainHandler.removeCallbacksAndMessages(null)
         super.onDestroy()
     }
 
@@ -70,6 +65,8 @@ class AirPodsScannerService : Service() {
             pendingBattery = null
             pendingHits = 0
             startScan()
+            mainHandler.removeCallbacksAndMessages(null)
+            mainHandler.postDelayed({ stopSelf() }, SCAN_WINDOW_MILLIS)
         }
         return START_STICKY
     }
@@ -164,7 +161,18 @@ class AirPodsScannerService : Service() {
             store.write(next)
             SampleWidgetProvider.refreshAll(this)
         }
+        readPublicBatteryLevel(device)?.let { level ->
+            Log.d(TAG, "system device battery address=${device.address} level=$level")
+            val latest = store.read().copy(case = level, lastSeenMillis = System.currentTimeMillis())
+            store.write(latest)
+            SampleWidgetProvider.refreshAll(this)
+        }
     }
+
+    private fun readPublicBatteryLevel(device: BluetoothDevice): Int? = runCatching {
+        val method = device.javaClass.getMethod("getBatteryLevel")
+        (method.invoke(device) as? Int)?.takeIf { it in 0..100 }
+    }.getOrNull()
 
     private val profileListener = object : BluetoothProfile.ServiceListener {
         override fun onServiceConnected(profile: Int, proxy: BluetoothProfile) {
@@ -241,29 +249,9 @@ class AirPodsScannerService : Service() {
                 ?.getManufacturerSpecificData(APPLE_COMPANY_ID)
                 ?.let(::normalizePayload)
                 ?: return
-            val battery = decode(strongestData) ?: return
-
-            Log.d(
-                TAG,
-                "accepted candidate address=${strongest.device.address} rssi=${strongest.rssi} " +
-                    "payload=${strongestData.toHex()} levels=${battery.left}/${battery.right}/${battery.case}",
-            )
-
-            // Require two consistent broadcasts before publishing. This prevents
-            // nearby beacons and packet noise from making the widget flicker.
-            if (pendingBattery != null && sameLevels(pendingBattery!!, battery)) {
-                pendingHits += 1
-            } else {
-                pendingBattery = battery
-                pendingHits = 1
-            }
-            if (pendingHits < REQUIRED_CONSISTENT_SAMPLES) return
-
-            val accepted = battery.copy(lastSeenMillis = System.currentTimeMillis())
-            if (!sameLevels(store.read(), accepted)) {
-                store.write(accepted)
-                SampleWidgetProvider.refreshAll(this@AirPodsScannerService)
-            }
+            // AirPods BLE packets are coarse 10% levels and use random addresses.
+            // They are intentionally never published as a 1% reading.
+            Log.d(TAG, "matched AirPods broadcast address=${strongest.device.address} rssi=${strongest.rssi}")
         }
     }
 
@@ -318,26 +306,6 @@ class AirPodsScannerService : Service() {
         first.left == second.left && first.right == second.right &&
             first.case == second.case && first.budsInUse == second.budsInUse
 
-    private fun notification(): Notification = NotificationCompat.Builder(this, CHANNEL_ID)
-        .setSmallIcon(android.R.drawable.stat_sys_data_bluetooth)
-        .setContentTitle(getString(R.string.airpods_scanner_title))
-        .setContentText(getString(R.string.airpods_scanner_text))
-        .setOngoing(true)
-        .build()
-
-    private fun createNotificationChannel() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val manager = getSystemService(NotificationManager::class.java)
-            manager.createNotificationChannel(
-                NotificationChannel(
-                    CHANNEL_ID,
-                    getString(R.string.airpods_scanner_channel),
-                    NotificationManager.IMPORTANCE_LOW,
-                ),
-            )
-        }
-    }
-
     companion object {
         private const val APPLE_COMPANY_ID = 0x004C
         private const val ACTION_BLUETOOTH_BATTERY_CHANGED =
@@ -361,29 +329,19 @@ class AirPodsScannerService : Service() {
             0x0E20, 0x1420, 0x2420, 0x2720,
         )
         private const val MIN_RSSI = -65
-        private const val REQUIRED_CONSISTENT_SAMPLES = 2
         private const val RECENT_BEACON_WINDOW_NS = 10_000_000_000L
-        private const val CHANNEL_ID = "airpods_scanner"
-        private const val NOTIFICATION_ID = 18
+        private const val SCAN_WINDOW_MILLIS = 12_000L
         private const val TAG = "AirPodsScanner"
         private const val ACTION_REFRESH = "com.qiki.widgets.action.REFRESH_AIRPODS"
 
         fun start(context: Context) {
             val intent = Intent(context, AirPodsScannerService::class.java)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                context.startForegroundService(intent)
-            } else {
-                context.startService(intent)
-            }
+            context.startService(intent)
         }
 
         fun refresh(context: Context) {
             val intent = Intent(context, AirPodsScannerService::class.java).setAction(ACTION_REFRESH)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                context.startForegroundService(intent)
-            } else {
-                context.startService(intent)
-            }
+            context.startService(intent)
         }
     }
 }

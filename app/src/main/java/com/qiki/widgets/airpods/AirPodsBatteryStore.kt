@@ -16,7 +16,9 @@ data class AirPodsBattery(
 class AirPodsBatteryStore(context: Context) {
     private val preferences = context.getSharedPreferences(FILE_NAME, Context.MODE_PRIVATE)
 
-    fun read(): AirPodsBattery = AirPodsBattery(
+    fun read(): AirPodsBattery = if (preferences.getInt(KEY_DATA_VERSION, 0) < DATA_VERSION) {
+        AirPodsBattery()
+    } else AirPodsBattery(
         left = preferences.getNullableInt(KEY_LEFT),
         right = preferences.getNullableInt(KEY_RIGHT),
         case = preferences.getNullableInt(KEY_CASE),
@@ -26,6 +28,7 @@ class AirPodsBatteryStore(context: Context) {
 
     fun write(value: AirPodsBattery) {
         preferences.edit()
+            .putInt(KEY_DATA_VERSION, DATA_VERSION)
             .putNullableInt(KEY_LEFT, value.left)
             .putNullableInt(KEY_RIGHT, value.right)
             .putNullableInt(KEY_CASE, value.case)
@@ -47,5 +50,7 @@ class AirPodsBatteryStore(context: Context) {
         const val KEY_CASE = "case"
         const val KEY_BUDS_IN_USE = "buds_in_use"
         const val KEY_LAST_SEEN = "last_seen"
+        const val KEY_DATA_VERSION = "data_version"
+        const val DATA_VERSION = 2
     }
 }
