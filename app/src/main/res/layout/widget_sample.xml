@@ -19,16 +19,19 @@
         android:id="@+id/widget_status"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
+        android:layout_marginTop="6dp"
+        android:ellipsize="end"
+        android:maxLines="2"
         android:text="@string/sample_widget_status"
         android:textColor="#FF444444"
-        android:textSize="13sp" />
+        android:textSize="12sp" />
 
     <TextView
         android:id="@+id/widget_updated_at"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="4dp"
+        android:maxLines="1"
         android:textColor="#FF777777"
-        android:textSize="11sp" />
+        android:textSize="10sp" />
 </LinearLayout>
