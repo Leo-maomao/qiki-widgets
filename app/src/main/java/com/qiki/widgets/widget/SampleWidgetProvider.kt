@@ -2,6 +2,7 @@ package com.qiki.widgets.widget
 
 import android.app.PendingIntent
 import android.appwidget.AppWidgetManager
+import android.bluetooth.BluetoothManager
 import android.appwidget.AppWidgetProvider
 import android.content.ComponentName
 import android.content.Context
@@ -11,6 +12,8 @@ import com.qiki.widgets.MainActivity
 import com.qiki.widgets.R
 import com.qiki.widgets.airpods.AirPodsBatteryStore
 import com.qiki.widgets.airpods.AirPodsScannerService
+import com.qiki.widgets.airpods.AirPodsBattery
+import android.net.Uri
 import java.text.DateFormat
 import java.util.Date
 
@@ -30,9 +33,40 @@ class SampleWidgetProvider : AppWidgetProvider() {
     override fun onReceive(context: Context, intent: Intent) {
         super.onReceive(context, intent)
         if (intent.action == ACTION_REFRESH) {
+            readXiaomiAirPodsState(context)
             AirPodsScannerService.refresh(context)
             refreshAll(context)
         }
+    }
+
+    private fun readXiaomiAirPodsState(context: Context) {
+        val adapter = context.getSystemService(BluetoothManager::class.java)?.adapter ?: return
+        val device = adapter.bondedDevices.firstOrNull {
+            (runCatching { it.name ?: it.alias ?: "" }.getOrDefault(""))
+                .contains("airpods", ignoreCase = true)
+        } ?: return
+        val result = runCatching {
+            context.contentResolver.call(
+                Uri.parse("content://com.android.bluetooth.ble.app.headsetdata.provider"),
+                "getAirpodsState",
+                device.address,
+                null,
+            )
+        }.getOrNull() ?: return
+        val left = result.getInt("leftBattery", -1).takeIf { it in 0..100 }
+        val right = result.getInt("rightBattery", -1).takeIf { it in 0..100 }
+        val box = result.getInt("boxBattery", -1).takeIf { it in 0..100 }
+        if (left == null && right == null && box == null) return
+        val current = AirPodsBatteryStore(context).read()
+        AirPodsBatteryStore(context).write(
+            current.copy(
+                left = left ?: current.left,
+                right = right ?: current.right,
+                case = box ?: current.case,
+                budsInUse = result.getInt("wearType", 0) == 2,
+                lastSeenMillis = System.currentTimeMillis(),
+            ),
+        )
     }
 
     override fun onEnabled(context: Context) {

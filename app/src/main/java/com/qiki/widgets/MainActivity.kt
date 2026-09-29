@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.setContent
@@ -35,6 +36,14 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        if (hasBluetoothPermissions()) {
+            runCatching { AirPodsScannerService.start(this) }
+                .onFailure { Log.e("QikiWidgets", "unable to start AirPods scan", it) }
+        }
+    }
+
     private fun ensureAirPodsPermissions() {
         val permissions = buildList {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -53,6 +62,11 @@ class MainActivity : ComponentActivity() {
             AirPodsScannerService.start(this)
         }
     }
+
+    private fun hasBluetoothPermissions(): Boolean = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        ContextCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_SCAN) == PackageManager.PERMISSION_GRANTED &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED
+    } else true
 }
 
 @Composable
