@@ -11,6 +11,9 @@
         android:roundIcon="@mipmap/ic_launcher"
         android:supportsRtl="true"
         android:theme="@style/Theme.QikiWidgets">
+        <meta-data
+            android:name="miuiWidgetVersion"
+            android:value="1" />
         <activity
             android:name=".MainActivity"
             android:exported="true">
@@ -21,6 +24,7 @@
         </activity>
         <receiver
             android:name=".widget.SampleWidgetProvider"
+            android:process=":widgetProvider"
             android:exported="true"
             android:label="@string/sample_widget_name">
             <intent-filter>
@@ -29,6 +33,9 @@
             <meta-data
                 android:name="android.appwidget.provider"
                 android:resource="@xml/sample_widget_info" />
+            <meta-data
+                android:name="miuiWidget"
+                android:value="true" />
         </receiver>
         <receiver
             android:name=".airpods.AirPodsBluetoothReceiver"
