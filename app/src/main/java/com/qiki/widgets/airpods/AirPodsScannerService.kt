@@ -163,12 +163,6 @@ class AirPodsScannerService : Service() {
             store.write(next)
             SampleWidgetProvider.refreshAll(this)
         }
-        readPublicBatteryLevel(device)?.let { level ->
-            Log.d(TAG, "system device battery address=${device.address} level=$level")
-            val latest = store.read().copy(case = level, lastSeenMillis = System.currentTimeMillis())
-            store.write(latest)
-            SampleWidgetProvider.refreshAll(this)
-        }
     }
 
     private fun readXiaomiBattery(device: BluetoothDevice) {
@@ -197,11 +191,6 @@ class AirPodsScannerService : Service() {
         store.write(next)
         SampleWidgetProvider.refreshAll(this)
     }
-
-    private fun readPublicBatteryLevel(device: BluetoothDevice): Int? = runCatching {
-        val method = device.javaClass.getMethod("getBatteryLevel")
-        (method.invoke(device) as? Int)?.takeIf { it in 0..100 }
-    }.getOrNull()
 
     private val profileListener = object : BluetoothProfile.ServiceListener {
         override fun onServiceConnected(profile: Int, proxy: BluetoothProfile) {
@@ -237,15 +226,9 @@ class AirPodsScannerService : Service() {
         if (device.address !in bondedAirPodsAddresses()) return
         val level = intent.getIntExtra(EXTRA_BLUETOOTH_BATTERY_LEVEL, -1)
         if (level !in 0..100) return
-        Log.d(TAG, "system Bluetooth battery address=${device.address} level=$level")
-        val current = store.read()
-        store.write(
-            current.copy(
-                case = level,
-                lastSeenMillis = System.currentTimeMillis(),
-            ),
-        )
-        SampleWidgetProvider.refreshAll(this@AirPodsScannerService)
+        // This broadcast exposes one aggregate device level. It does not identify
+        // left/right/case, so it must never be written into a component slot.
+        Log.d(TAG, "ignoring aggregate Bluetooth battery address=${device.address} level=$level")
     }
 
     private val scanCallback = object : ScanCallback() {
